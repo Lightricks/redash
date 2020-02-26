@@ -37,6 +37,7 @@ function getColumnFriendlyName(column) {
 
 function QueryResultService($resource, $timeout, $q, QueryResultError, Auth) {
   const QueryResultResource = $resource('api/query_results/:id', { id: '@id' }, { post: { method: 'POST' } });
+  const DryRunResource = $resource('api/query_dry_run', {}, { post: { method: 'POST' } });
   const QueryResultByQueryIdResource = $resource('api/queries/:queryId/results/:id.json', { queryId: '@queryId', id: '@id' });
   const Job = $resource('api/jobs/:id', { id: '@id' });
   const JobWithApiKey = $resource('api/queries/:queryId/jobs/:id', { queryId: '@queryId', id: '@id' });
@@ -432,6 +433,24 @@ function QueryResultService($resource, $timeout, $q, QueryResultError, Auth) {
       );
 
       return queryResult;
+    }
+
+    static dryRun(dataSourceId, query, parameters, results) {
+      const params = {
+        data_source_id: dataSourceId,
+        parameters,
+        query,
+      };
+
+      DryRunResource.post(
+        params,
+        (response) => {
+          results(response);
+        },
+        (error) => {
+          handleErrorResponse(null, error);
+        },
+      );
     }
   }
 

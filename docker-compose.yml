@@ -39,7 +39,9 @@ services:
     image: redis:3-alpine
     restart: unless-stopped
   postgres:
-    image: postgres:9.5-alpine
+    # Broken in newer revisions of 9.5 due to change in default configuration.
+    # freeze to this revision until the setup procedure is patched for newer versions(upstream)
+    image: postgres:9.5.20-alpine
     # The following turns the DB into less durable, but gains significant performance improvements for the tests run (x3
     # improvement on my personal machine). We should consider moving this into a dedicated Docker Compose configuration for
     # tests.

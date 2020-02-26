@@ -744,6 +744,11 @@ function QueryResource(
     return this.prepareQueryResultExecution(execute, maxAge);
   };
 
+  QueryService.prototype.dryRunQuery = function dryRunQuery(query, results) {
+    const parameters = this.getParameters().getValues({ joinListValues: true });
+    QueryResult.dryRun(this.data_source_id, query, parameters, results);
+  };
+
   QueryService.prototype.getQueryResultByText = function getQueryResultByText(maxAge, selectedQueryText) {
     const queryText = selectedQueryText || this.query;
     if (!queryText) {

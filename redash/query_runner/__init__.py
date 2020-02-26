@@ -126,6 +126,13 @@ class BaseQueryRunner(object):
             raise Exception("Failed running query [%s]." % query)
         return json_loads(results)['rows']
 
+    @property
+    def dry_run_support(self):
+        return False
+
+    def dry_run(self, query):
+        raise NotImplementedError("dry run support is not implemented for this query runner")
+
     @classmethod
     def to_dict(cls):
         return {

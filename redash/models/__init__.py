@@ -91,7 +91,8 @@ class DataSource(BelongsToOrgMixin, db.Model):
             'type': self.type,
             'syntax': self.query_runner.syntax,
             'paused': self.paused,
-            'pause_reason': self.pause_reason
+            'pause_reason': self.pause_reason,
+            'dry_run': self.dry_run_support
         }
 
         if all:
@@ -217,6 +218,10 @@ class DataSource(BelongsToOrgMixin, db.Model):
             DataSourceGroup.data_source == self
         )
         return dict(map(lambda g: (g.group_id, g.view_only), groups))
+
+    @property
+    def dry_run_support(self):
+        return self.query_runner.dry_run_support
 
 
 @generic_repr('id', 'data_source_id', 'group_id', 'view_only')

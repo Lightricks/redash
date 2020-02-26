@@ -9,6 +9,7 @@ export const DataSource = PropTypes.shape({
     doc_url: PropTypes.string,
   }),
   type_name: PropTypes.string,
+  dry_run: PropTypes.bool,
 });
 
 export const Table = PropTypes.shape({

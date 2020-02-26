@@ -89,6 +89,28 @@ edit-in-place p.editable:hover {
   .dropdown-toggle {
     margin-right: 0;
   }
+
+  .dry_run {
+    .error{
+      padding-top: 5px;
+      color: darkred;
+
+      .code {
+        font-weight: bold;
+        font-style: italic;
+      }
+    }
+    .result{
+      padding-top: 5px;
+
+      .key:not(:first-child) {
+        padding-left: 5px;
+      }
+      .value {
+        padding: 0 5px;
+      }
+    }
+  }
 }
 
 .filter-container {

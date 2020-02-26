@@ -70,6 +70,28 @@ def run_query(query, parameters, data_source, query_id, max_age=0):
         return {'job': job.to_dict()}
 
 
+def dry_run_query(query, parameters, data_source):
+    if data_source.paused:
+        if data_source.pause_reason:
+            message = '{} is paused ({}). Please try later.'.format(data_source.name, data_source.pause_reason)
+        else:
+            message = '{} is paused. Please try later.'.format(data_source.name)
+
+        return error_response(message)
+
+    if not data_source.dry_run_support:
+        message = '{} does not support dry run'.format(data_source.name)
+
+        return error_response(message)
+
+    try:
+        query.apply(parameters)
+    except (InvalidParameterError, QueryDetachedFromDataSourceError) as e:
+        abort(400, message=e.message)
+
+    return data_source.query_runner.dry_run(query.text)
+
+
 def get_download_filename(query_result, query, filetype):
     retrieved_at = query_result.retrieved_at.strftime("%Y_%m_%d")
     if query:
@@ -117,6 +139,29 @@ class QueryResultListResource(BaseResource):
             return error_messages['no_permission']
 
         return run_query(parameterized_query, parameters, data_source, query_id, max_age)
+
+
+class QueryDryRun(BaseResource):
+    @require_permission('execute_query')
+    def post(self):
+        params = request.get_json(force=True)
+        logging.info("dry run params:" + str(params))
+
+        query = params['query']
+        parameters = params.get('parameters', collect_parameters_from_request(request.args))
+
+        parameterized_query = ParameterizedQuery(query, org=self.current_org)
+
+        data_source_id = params.get('data_source_id')
+        if data_source_id:
+            data_source = models.DataSource.get_by_id_and_org(params.get('data_source_id'), self.current_org)
+        else:
+            return error_messages['select_data_source']
+
+        if not has_access(data_source, self.current_user, not_view_only):
+            return error_messages['no_permission']
+
+        return dry_run_query(parameterized_query, parameters, data_source)
 
 
 ONE_YEAR = 60 * 60 * 24 * 365.25

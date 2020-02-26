@@ -136,6 +136,26 @@ function QueryViewCtrl(
     Notifications.getPermissions();
   };
 
+  $scope.dryRunLoading = false;
+  $scope.dryRunQuery = (query) => {
+    $scope.dryRunLoading = true;
+    $scope.dryRunError = null;
+    $scope.dryRunResults = null;
+
+    $scope.query.dryRunQuery(query, (result) => {
+      $scope.dryRunLoading = false;
+
+      if (result.error) {
+        $scope.dryRunError = result.error;
+      } else {
+        $scope.dryRunResults = {
+          cache: result.cacheHit,
+          size: result.totalBytesProcessed,
+        };
+      }
+    });
+  };
+
   $scope.selectedVisualization = DEFAULT_VISUALIZATION;
   $scope.currentUser = currentUser;
   $scope.dataSource = {};

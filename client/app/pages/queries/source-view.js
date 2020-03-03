@@ -25,6 +25,9 @@ function QuerySourceCtrl(
   $scope.isDirty = false;
   $scope.base_url = `${$location.protocol()}://${$location.host()}:${$location.port()}`;
   $scope.modKey = KeyboardShortcuts.modKey;
+  // dry run related controls
+  $scope.dryRunDirty = true;
+  $scope.dryRunLoading = false;
 
   // @override
   Object.defineProperty($scope, 'showDataset', {
@@ -55,6 +58,22 @@ function QuerySourceCtrl(
   $scope.updateQuery = debounce(
     newQueryText => $scope.$apply(() => {
       $scope.query.query = newQueryText;
+
+      // Reset dry run
+      $scope.dryRunDirty = true;
+      $scope.dryRunLoading = false;
+      $scope.dryRunError = null;
+      $scope.dryRunResults = null;
+    }),
+  );
+
+  // Trigger on an edit pause considered suitable for dry run submission
+  $scope.updateQueryDone = debounce(
+    newQueryText => $scope.$apply(() => {
+      if ($scope.dataSource.dry_run) {
+        $scope.dryRunDirty = false;
+        $scope.dryRunQuery(newQueryText);
+      }
     }),
   );
 

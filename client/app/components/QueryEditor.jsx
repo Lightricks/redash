@@ -21,6 +21,7 @@ import { KeyboardShortcuts } from '@/services/keyboard-shortcuts';
 
 import localOptions from '@/lib/localOptions';
 import AutocompleteToggle from '@/components/AutocompleteToggle';
+import filesize from 'filesize';
 import keywordBuilder from './keywordBuilder';
 import { DataSource, Schema } from './proptypes';
 
@@ -28,6 +29,9 @@ import './QueryEditor.css';
 
 const langTools = ace.acequire('ace/ext/language_tools');
 const snippetsModule = ace.acequire('ace/snippets');
+// The pause in changing the query in the editor which triggers a dry run(in ms)
+// (when supported)
+const dryRunPause = 3000;
 
 // By default Ace will try to load snippet files for the different modes and fail.
 // We don't need them, so we use these placeholders until we define our own.
@@ -42,6 +46,17 @@ defineDummySnippets('python');
 defineDummySnippets('sql');
 defineDummySnippets('json');
 defineDummySnippets('yaml');
+
+const DryRunError = PropTypes.shape({
+  code: PropTypes.number,
+  message: PropTypes.string,
+  status: PropTypes.string,
+});
+
+const DryRunResult = PropTypes.shape({
+  cache: PropTypes.bool,
+  size: PropTypes.string,
+});
 
 class QueryEditor extends React.Component {
   static propTypes = {
@@ -59,16 +74,25 @@ class QueryEditor extends React.Component {
     queryExecuting: PropTypes.bool.isRequired,
     saveQuery: PropTypes.func.isRequired,
     updateQuery: PropTypes.func.isRequired,
+    updateQueryDone: PropTypes.func.isRequired,
     updateSelectedQuery: PropTypes.func.isRequired,
     listenForResize: PropTypes.func.isRequired,
     listenForEditorCommand: PropTypes.func.isRequired,
+    dryRunLoading: PropTypes.bool,
+    dryRunError: DryRunError,
+    dryRunResult: DryRunResult,
   };
 
   static defaultProps = {
     schema: null,
     dataSource: {},
     dataSources: [],
+    dryRunLoading: false,
+    dryRunError: null,
+    dryRunResult: null,
   };
+
+  static updateQueryTimeout = null;
 
   constructor(props) {
     super(props);
@@ -203,6 +227,13 @@ class QueryEditor extends React.Component {
   };
 
   updateQuery = (queryText) => {
+    if (this.updateQueryTimeout) {
+      clearTimeout(this.updateQueryTimeout);
+    }
+    const doneCallback = this.props.updateQueryDone;
+    this.updateQueryTimeout = setTimeout(() => {
+      doneCallback(queryText);
+    }, dryRunPause);
     this.props.updateQuery(queryText);
     this.setState({ queryText });
   };
@@ -278,7 +309,7 @@ class QueryEditor extends React.Component {
                 disabled={this.state.liveAutocompleteDisabled}
               />
               <select
-                className="form-control datasource-small flex-fill w-100"
+                className="form-control datasource-small"
                 onChange={this.props.updateDataSource}
                 disabled={!this.props.isQueryOwner}
               >
@@ -288,6 +319,37 @@ class QueryEditor extends React.Component {
                   </option>
                 ))}
               </select>
+              <div className="flex-fill w-100">
+                {this.props.dataSource.dry_run ? (
+                  <div className="dry_run">
+                    {this.props.dryRunLoading ? (
+                      <div className="lds-ellipsis">
+                        <div />
+                        <div />
+                        <div />
+                        <div />
+                      </div>
+                    ) : null}
+                    {this.props.dryRunError ? (
+                      <div className="error">
+                        <span className="code">{this.props.dryRunError.status}</span>
+                        -
+                        <span className="message">{this.props.dryRunError.message}</span>
+                      </div>
+                    ) : null}
+                    {this.props.dryRunResult ? (
+                      <div className="result">
+                        <span className="key">cache:</span>
+                        <span className="value">{this.props.dryRunResult.cache ? 'yes' : 'no'}</span>
+                        |
+                        <span className="key">scan:</span>
+                        <span className="value">{filesize(this.props.dryRunResult.size)}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
               {this.props.canEdit ? (
                 <Tooltip placement="top" title={modKey + ' + S'}>
                   <button

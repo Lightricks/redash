@@ -3,6 +3,7 @@ import logging
 import sys
 import time
 from base64 import b64decode
+import json
 
 import httplib2
 import requests
@@ -10,6 +11,7 @@ import requests
 from redash import settings
 from redash.query_runner import *
 from redash.utils import json_dumps, json_loads
+from googleapiclient.errors import HttpError
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +268,7 @@ class BigQuery(BaseQueryRunner):
         service = self._get_bigquery_service()
         project_id = self._get_project_id()
         datasets = service.datasets().list(projectId=project_id).execute()
+        start = time.time()
         schema = []
         for dataset in datasets.get('datasets', []):
             dataset_id = dataset['datasetReference']['datasetId']
@@ -286,6 +289,7 @@ class BigQuery(BaseQueryRunner):
                                                datasetId=dataset_id,
                                                pageToken=next_token).execute()
 
+        logger.info("refresh took: %.2f", time.time() - start)
         return schema
 
     def run_query(self, query, user):
@@ -317,5 +321,27 @@ class BigQuery(BaseQueryRunner):
 
         return json_data, error
 
+    @property
+    def dry_run_support(self):
+        return True
+
+    def dry_run(self, query):
+        bigquery_service = self._get_bigquery_service()
+        project_id = self._get_project_id()
+
+        try:
+            return bigquery_service.jobs().query(projectId=project_id, body={
+                "query": query,
+                "dryRun": True
+            }).execute()
+        except HttpError as he:
+            content = json.loads(he.content)
+            return {
+                "error": {
+                    "code": content["error"]["code"],
+                    "status": content["error"]["status"],
+                    "message": content["error"]["message"]
+                }
+            }
 
 register(BigQuery)

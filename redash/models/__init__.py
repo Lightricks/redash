@@ -92,7 +92,8 @@ class DataSource(BelongsToOrgMixin, db.Model):
             'syntax': self.query_runner.syntax,
             'paused': self.paused,
             'pause_reason': self.pause_reason,
-            'dry_run': self.dry_run_support
+            'dry_run': self.dry_run_support,
+            'preview': self.preview_support
         }
 
         if all:
@@ -222,6 +223,10 @@ class DataSource(BelongsToOrgMixin, db.Model):
     @property
     def dry_run_support(self):
         return self.query_runner.dry_run_support
+
+    @property
+    def preview_support(self):
+        return self.query_runner.supports_preview
 
 
 @generic_repr('id', 'data_source_id', 'group_id', 'view_only')

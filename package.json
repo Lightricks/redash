@@ -59,6 +59,7 @@
     "d3": "^3.5.17",
     "d3-cloud": "^1.2.4",
     "debug": "^3.1.0",
+    "filesize": "^6.1.0",
     "font-awesome": "^4.7.0",
     "hoist-non-react-statics": "^3.3.0",
     "jquery": "^3.2.1",
@@ -69,6 +70,7 @@
     "lodash": "^4.17.10",
     "markdown": "0.5.0",
     "material-design-iconic-font": "^2.2.0",
+    "mdbreact": "^4.25.3",
     "moment": "^2.19.3",
     "mousetrap": "^1.6.1",
     "mustache": "^2.3.0",
@@ -85,8 +87,7 @@
     "react-sortable-hoc": "^1.9.1",
     "react2angular": "^3.2.1",
     "tinycolor2": "^1.4.1",
-    "ui-select": "^0.19.8",
-    "filesize": "^6.1.0"
+    "ui-select": "^0.19.8"
   },
   "devDependencies": {
     "@babel/core": "^7.2.2",

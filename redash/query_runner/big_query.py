@@ -126,13 +126,18 @@ class BigQuery(BaseQueryRunner):
                     "type": "boolean",
                     "title": "Load Schema"
                 },
+                'previewMaxResults': {
+                    "type": "number",
+                    "title": "Preview Max Results",
+                    "default": 100
+                },
                 'maximumBillingTier': {
                     "type": "number",
                     "title": "Maximum Billing Tier"
                 }
             },
             'required': ['jsonKeyFile', 'projectId'],
-            "order": ['projectId', 'jsonKeyFile', 'loadSchema', 'useStandardSql', 'location', 'totalMBytesProcessedLimit', 'maximumBillingTier', 'userDefinedFunctionResourceUri'],
+            "order": ['projectId', 'jsonKeyFile', 'loadSchema', 'useStandardSql', 'location', 'previewMaxResults', 'totalMBytesProcessedLimit', 'maximumBillingTier', 'userDefinedFunctionResourceUri'],
             'secret': ['jsonKeyFile']
         }
 
@@ -155,6 +160,9 @@ class BigQuery(BaseQueryRunner):
 
     def _get_location(self):
         return self.configuration.get("location")
+
+    def _get_preview_max_results(self):
+        return self.configuration["previewMaxResults"]
 
     def _get_total_bytes_processed(self, jobs, query):
         job_data = {
@@ -242,14 +250,20 @@ class BigQuery(BaseQueryRunner):
 
         return data
 
-    def _get_columns_schema(self, table_data):
+    def _get_columns_schema(self, table_data, table_type):
         columns = []
         for column in table_data.get('schema', {}).get('fields', []):
             columns.extend(self._get_columns_schema_column(column))
 
         project_id = self._get_project_id()
         table_name = table_data['id'].replace("%s:" % project_id, "")
-        return {'name': table_name, 'columns': columns}
+        return {
+            'name': table_name,
+            'columns': columns,
+            'type': table_type,
+            # Only tables can be previewed on big query
+            'preview': table_type == "TABLE"
+        }
 
     def _get_columns_schema_column(self, column):
         columns = []
@@ -278,7 +292,7 @@ class BigQuery(BaseQueryRunner):
                     table_data = service.tables().get(projectId=project_id,
                                                       datasetId=dataset_id,
                                                       tableId=table['tableReference']['tableId']).execute()
-                    table_schema = self._get_columns_schema(table_data)
+                    table_schema = self._get_columns_schema(table_data, table["type"])
                     schema.append(table_schema)
 
                 next_token = tables.get('nextPageToken', None)
@@ -343,5 +357,65 @@ class BigQuery(BaseQueryRunner):
                     "message": content["error"]["message"]
                 }
             }
+
+    @property
+    def supports_preview(self):
+        return True
+
+    def preview(self, full_table_name):
+        bigquery_service = self._get_bigquery_service()
+        project_id = self._get_project_id()
+
+        ds, _, table_name = full_table_name.partition(".")
+
+        try:
+            data = bigquery_service.tabledata().list(
+                projectId=project_id,
+                datasetId=ds,
+                tableId=table_name,
+                maxResults=self._get_preview_max_results()
+            ).execute()
+        except HttpError as he:
+            content = json.loads(he.content)
+            return {
+                "error": {
+                    "code": content["error"]["code"],
+                    "status": content["error"]["status"],
+                    "message": content["error"]["message"]
+                }
+            }
+
+        columns = bigquery_service.tables().get(
+            projectId=project_id,
+            datasetId=ds,
+            tableId=table_name
+        ).execute()
+
+        fields = columns["schema"]["fields"]
+
+        def map_row(row):
+            f = row["f"]
+
+            row_data = {}
+            for i, col in enumerate(f):
+                row_data[fields[i]["name"]] = col["v"]
+
+            return row_data
+
+        def map_columns(column):
+            return {
+                "label": column["name"],
+                "field": column["name"],
+                "sort": "asc"
+            }
+
+
+        if "rows" not in data and data["totalRows"] == "0":
+            data["rows"] = []
+
+        return {
+            "rows": list(map(map_row, data["rows"])),
+            "columns": list(map(map_columns, fields))
+        }
 
 register(BigQuery)

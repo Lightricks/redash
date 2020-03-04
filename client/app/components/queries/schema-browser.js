@@ -3,6 +3,7 @@ import template from './schema-browser.html';
 function SchemaBrowserCtrl($rootScope, $scope) {
   'ngInject';
 
+
   this.showTable = (table) => {
     table.collapsed = !table.collapsed;
     $scope.$broadcast('vsRepeatTrigger');
@@ -28,6 +29,18 @@ function SchemaBrowserCtrl($rootScope, $scope) {
     $event.stopPropagation();
   };
 
+  this.preview = ($event, tableName) => {
+    $event.preventDefault();
+    $event.stopPropagation();
+
+    window.open(
+      '/preview/' + $scope.$ctrl.dsId + '/' + tableName,
+      '_blank',
+      'height=1000,width=1000,menubar=0,toolbar=0',
+      false,
+    );
+  };
+
   this.splitFilter = (filter) => {
     filter = filter.replace(/ {2}/g, ' ');
     if (filter.includes(' ')) {
@@ -45,6 +58,8 @@ const SchemaBrowser = {
   bindings: {
     schema: '<',
     onRefresh: '&',
+    preview: '<',
+    dsId: '<',
   },
   controller: SchemaBrowserCtrl,
   template,

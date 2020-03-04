@@ -17,7 +17,8 @@ from redash.handlers.data_sources import (DataSourceListResource,
                                           DataSourceResource,
                                           DataSourceSchemaResource,
                                           DataSourceTestResource,
-                                          DataSourceTypeListResource)
+                                          DataSourceTypeListResource,
+                                          DataSourceTablePreview)
 from redash.handlers.destinations import (DestinationListResource,
                                           DestinationResource,
                                           DestinationTypeListResource)
@@ -90,6 +91,7 @@ api.add_org_resource(DataSourceListResource, '/api/data_sources', endpoint='data
 api.add_org_resource(DataSourceSchemaResource, '/api/data_sources/<data_source_id>/schema')
 api.add_org_resource(DataSourcePauseResource, '/api/data_sources/<data_source_id>/pause')
 api.add_org_resource(DataSourceTestResource, '/api/data_sources/<data_source_id>/test')
+api.add_org_resource(DataSourceTablePreview, '/api/data_sources/<data_source_id>/preview/<table_name>')
 api.add_org_resource(DataSourceResource, '/api/data_sources/<data_source_id>', endpoint='data_source')
 
 api.add_org_resource(GroupListResource, '/api/groups', endpoint='groups')

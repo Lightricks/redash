@@ -119,6 +119,13 @@ class BaseQueryRunner(object):
     def get_schema(self, get_stats=False):
         raise NotSupported()
 
+    @property
+    def supports_preview(self):
+        return False
+
+    def preview(self, table_name):
+        raise NotSupported()
+
     def _run_query_internal(self, query):
         results, error = self.run_query(query, None)
 

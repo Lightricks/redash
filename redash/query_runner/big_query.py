@@ -286,47 +286,108 @@ class BigQuery(BaseQueryRunner):
 
         return columns
 
-    def get_schema(self, get_stats=False):
-        if not self.configuration.get('loadSchema', False):
-            return []
-
+    def _list_datasets(self):
         service = self._get_bigquery_service()
         primary_project_id = self._get_project_id()
-
 
         projects = set(self._get_additional_projects())
         # Always add the primary project to the the project list
         # (it's probably already there, but just in case it isn't)
         projects.add(primary_project_id)
 
-        logger.info("projects: %s" % projects)
+        # Query for all datasets in a single round trip to minimize latency and cost
+        query = "\nUNION ALL\n".join([
+            "SELECT CATALOG_NAME, SCHEMA_NAME " \
+            "FROM `%s`.INFORMATION_SCHEMA.SCHEMATA" % (project_id,)
+            for project_id in projects
+        ])
+
+        # Submit the query to BigQuery.
+        resp = service.jobs().query(projectId=primary_project_id, body={
+            'useLegacySql':False,
+            'query': query
+        }).execute()
+
+        # Format results as
+        # [(project_id, dataset_id)]
+        return map(
+            lambda row: (row['f'][0]['v'], row['f'][1]['v']),
+            resp.get("rows", [])
+        )
+
+    def _get_table_columns(self, dataset_ids):
+        service = self._get_bigquery_service()
+        primary_project_id = self._get_project_id()
+
+        query_parts = []
+
+        # Construct a long chain of SELECTs joined by UNION ALLs to retrieve all the tables and
+        # structures in a single round trip, for minimum latency and cost
+        for project_id, dataset_id in dataset_ids:
+            query_parts.append(
+                "SELECT TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, STRING_AGG(COLUMN_NAME) "
+                "FROM `%(project_id)s`.`%(dataset_id)s`.INFORMATION_SCHEMA.COLUMNS "
+                "JOIN `%(project_id)s`.`%(dataset_id)s`.INFORMATION_SCHEMA.TABLES "
+                "USING (TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME) "
+                "GROUP BY TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE" % {
+                    "project_id": project_id,
+                    "dataset_id": dataset_id
+                })
+
+        query = "\nUNION ALL\n".join(query_parts)
+
+        # Run the query on BigQuery.
+        resp = service.jobs().query(projectId=primary_project_id, body={
+            'useLegacySql':False,
+            'query': query
+        }).execute()
+
+        # format the result rows as
+        # [(project_id,dataset_id,table_name, table_type, table_columns)]
+        return map(
+            lambda row: (
+                row['f'][0]['v'],
+                row['f'][1]['v'],
+                row['f'][2]['v'],
+                row['f'][3]['v'],
+                row['f'][4]['v'].split(",")
+            ),
+            resp.get("rows", [])
+        )
+
+
+
+    def get_schema(self, get_stats=False):
+        if not self.configuration.get('loadSchema', False):
+            return []
+
+        primary_project_id = self._get_project_id()
 
         start = time.time()
+
+        dataset_ids = self._list_datasets()
+
+        table_columns = self._get_table_columns(dataset_ids)
+
         schema = []
 
-        for project_id in projects:
-            datasets = service.datasets().list(projectId=project_id).execute()
+        for project_id, dataset_id, table_name, table_type, table_columns in table_columns:
+            if project_id == primary_project_id:
+                full_table_name = dataset_id + "." + table_name
+            else:
+                full_table_name = project_id + "." + dataset_id + "." + table_name
 
-            for dataset in datasets.get('datasets', []):
-                dataset_id = dataset['datasetReference']['datasetId']
-                tables = service.tables().list(projectId=project_id, datasetId=dataset_id).execute()
-                while True:
-                    for table in tables.get('tables', []):
-                        table_data = service.tables().get(projectId=project_id,
-                                                          datasetId=dataset_id,
-                                                          tableId=table['tableReference']['tableId']).execute()
-                        table_schema = self._get_columns_schema(table_data, table["type"], project_id, project_id == primary_project_id)
-                        schema.append(table_schema)
-
-                    next_token = tables.get('nextPageToken', None)
-                    if next_token is None:
-                        break
-
-                    tables = service.tables().list(projectId=project_id,
-                                                   datasetId=dataset_id,
-                                                   pageToken=next_token).execute()
+            schema.append({
+                'name': full_table_name,
+                'columns': table_columns,
+                # Big Query specific(for now)
+                'type': table_type,
+                # Views can't be previewed
+                'preview': table_type != "VIEW"
+            })
 
         logger.info("refresh took: %.2f", time.time() - start)
+
         return schema
 
     def run_query(self, query, user):

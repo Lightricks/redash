@@ -11,13 +11,24 @@ div.table-name {
     display: none;
   }
 
+  .table-preview {
+    display: none;
+  }
+
   &:hover {
     background: fade(@redash-gray, 10%);
 
     .copy-to-editor {
       display: flex;
     }
+    .table-preview {
+      display: flex;
+    }
   }
+}
+
+div.table-name.preview {
+  padding-right: 42px;
 }
 
 .schema-container {
@@ -42,6 +53,19 @@ div.table-name {
     position: absolute;
     top: 0;
     right: 0;
+    bottom: 0;
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .table-preview {
+    color: fade(@redash-gray, 90%);
+    cursor: pointer;
+    position: absolute;
+    top: 0;
+    right: 20px;
     bottom: 0;
     width: 20px;
     display: flex;

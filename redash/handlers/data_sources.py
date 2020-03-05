@@ -172,6 +172,25 @@ class DataSourceSchemaResource(BaseResource):
         return response
 
 
+class DataSourceTablePreview(BaseResource):
+    def get(self, data_source_id, table_name):
+        data_source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)
+        require_access(data_source, self.current_user, view_only)
+
+        response = {}
+        if not data_source.preview_support:
+            response['error'] = {
+                'code': 1,
+                'message': 'Preview is not supported for this datasource'
+            }
+        else:
+            query_runner = data_source.query_runner
+
+            response['preview'] = query_runner.preview(table_name)
+
+        return response
+
+
 class DataSourcePauseResource(BaseResource):
     @require_admin
     def post(self, data_source_id):

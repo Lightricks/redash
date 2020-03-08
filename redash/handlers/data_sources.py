@@ -164,6 +164,7 @@ class DataSourceSchemaResource(BaseResource):
                 'message': 'Data source type does not support retrieving schema'
             }
         except Exception:
+            logging.exception("failed to retrieve schema")
             response['error'] = {
                 'code': 2,
                 'message': 'Error retrieving schema.'

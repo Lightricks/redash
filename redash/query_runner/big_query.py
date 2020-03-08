@@ -101,6 +101,10 @@ class BigQuery(BaseQueryRunner):
                     'type': 'string',
                     'title': 'Project ID'
                 },
+                'additionalProjects': {
+                    'type': 'string',
+                    'title': 'Additional projects for schema read'
+                },
                 'jsonKeyFile': {
                     "type": "string",
                     'title': 'JSON Key File'
@@ -163,6 +167,9 @@ class BigQuery(BaseQueryRunner):
 
     def _get_preview_max_results(self):
         return self.configuration["previewMaxResults"]
+
+    def _get_additional_projects(self):
+        return self.configuration["additionalProjects"].split(",")
 
     def _get_total_bytes_processed(self, jobs, query):
         job_data = {
@@ -250,13 +257,17 @@ class BigQuery(BaseQueryRunner):
 
         return data
 
-    def _get_columns_schema(self, table_data, table_type):
+    def _get_columns_schema(self, table_data, table_type, project_id, is_primary):
         columns = []
         for column in table_data.get('schema', {}).get('fields', []):
             columns.extend(self._get_columns_schema_column(column))
 
-        project_id = self._get_project_id()
-        table_name = table_data['id'].replace("%s:" % project_id, "")
+        if is_primary:
+            table_name = table_data['id'].replace("%s:" % project_id, "")
+        else:
+            # Keep the project_id in, just replace the separator with the .
+            table_name = table_data['id'].replace(":", ".")
+
         return {
             'name': table_name,
             'columns': columns,
@@ -275,35 +286,108 @@ class BigQuery(BaseQueryRunner):
 
         return columns
 
+    def _list_datasets(self):
+        service = self._get_bigquery_service()
+        primary_project_id = self._get_project_id()
+
+        projects = set(self._get_additional_projects())
+        # Always add the primary project to the the project list
+        # (it's probably already there, but just in case it isn't)
+        projects.add(primary_project_id)
+
+        # Query for all datasets in a single round trip to minimize latency and cost
+        query = "\nUNION ALL\n".join([
+            "SELECT CATALOG_NAME, SCHEMA_NAME " \
+            "FROM `%s`.INFORMATION_SCHEMA.SCHEMATA" % (project_id,)
+            for project_id in projects
+        ])
+
+        # Submit the query to BigQuery.
+        resp = service.jobs().query(projectId=primary_project_id, body={
+            'useLegacySql':False,
+            'query': query
+        }).execute()
+
+        # Format results as
+        # [(project_id, dataset_id)]
+        return map(
+            lambda row: (row['f'][0]['v'], row['f'][1]['v']),
+            resp.get("rows", [])
+        )
+
+    def _get_table_columns(self, dataset_ids):
+        service = self._get_bigquery_service()
+        primary_project_id = self._get_project_id()
+
+        query_parts = []
+
+        # Construct a long chain of SELECTs joined by UNION ALLs to retrieve all the tables and
+        # structures in a single round trip, for minimum latency and cost
+        for project_id, dataset_id in dataset_ids:
+            query_parts.append(
+                "SELECT TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, STRING_AGG(COLUMN_NAME) "
+                "FROM `%(project_id)s`.`%(dataset_id)s`.INFORMATION_SCHEMA.COLUMNS "
+                "JOIN `%(project_id)s`.`%(dataset_id)s`.INFORMATION_SCHEMA.TABLES "
+                "USING (TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME) "
+                "GROUP BY TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE" % {
+                    "project_id": project_id,
+                    "dataset_id": dataset_id
+                })
+
+        query = "\nUNION ALL\n".join(query_parts)
+
+        # Run the query on BigQuery.
+        resp = service.jobs().query(projectId=primary_project_id, body={
+            'useLegacySql':False,
+            'query': query
+        }).execute()
+
+        # format the result rows as
+        # [(project_id,dataset_id,table_name, table_type, table_columns)]
+        return map(
+            lambda row: (
+                row['f'][0]['v'],
+                row['f'][1]['v'],
+                row['f'][2]['v'],
+                row['f'][3]['v'],
+                row['f'][4]['v'].split(",")
+            ),
+            resp.get("rows", [])
+        )
+
+
+
     def get_schema(self, get_stats=False):
         if not self.configuration.get('loadSchema', False):
             return []
 
-        service = self._get_bigquery_service()
-        project_id = self._get_project_id()
-        datasets = service.datasets().list(projectId=project_id).execute()
+        primary_project_id = self._get_project_id()
+
         start = time.time()
+
+        dataset_ids = self._list_datasets()
+
+        table_columns = self._get_table_columns(dataset_ids)
+
         schema = []
-        for dataset in datasets.get('datasets', []):
-            dataset_id = dataset['datasetReference']['datasetId']
-            tables = service.tables().list(projectId=project_id, datasetId=dataset_id).execute()
-            while True:
-                for table in tables.get('tables', []):
-                    table_data = service.tables().get(projectId=project_id,
-                                                      datasetId=dataset_id,
-                                                      tableId=table['tableReference']['tableId']).execute()
-                    table_schema = self._get_columns_schema(table_data, table["type"])
-                    schema.append(table_schema)
 
-                next_token = tables.get('nextPageToken', None)
-                if next_token is None:
-                    break
+        for project_id, dataset_id, table_name, table_type, table_columns in table_columns:
+            if project_id == primary_project_id:
+                full_table_name = dataset_id + "." + table_name
+            else:
+                full_table_name = project_id + "." + dataset_id + "." + table_name
 
-                tables = service.tables().list(projectId=project_id,
-                                               datasetId=dataset_id,
-                                               pageToken=next_token).execute()
+            schema.append({
+                'name': full_table_name,
+                'columns': table_columns,
+                # Big Query specific(for now)
+                'type': table_type,
+                # Views can't be previewed
+                'preview': table_type != "VIEW"
+            })
 
         logger.info("refresh took: %.2f", time.time() - start)
+
         return schema
 
     def run_query(self, query, user):
@@ -343,11 +427,16 @@ class BigQuery(BaseQueryRunner):
         bigquery_service = self._get_bigquery_service()
         project_id = self._get_project_id()
 
+        args = {
+            "query": query,
+            "dryRun": True
+        }
+
+        if self.configuration.get('useStandardSql', False):
+            args['useLegacySql'] = False
+
         try:
-            return bigquery_service.jobs().query(projectId=project_id, body={
-                "query": query,
-                "dryRun": True
-            }).execute()
+            return bigquery_service.jobs().query(projectId=project_id, body=args).execute()
         except HttpError as he:
             content = json.loads(he.content)
             return {
@@ -364,7 +453,11 @@ class BigQuery(BaseQueryRunner):
 
     def preview(self, full_table_name):
         bigquery_service = self._get_bigquery_service()
-        project_id = self._get_project_id()
+        # If the full_table_name has a project_id in it, extract it
+        if full_table_name.count(".") == 2:
+            project_id, _, full_table_name = full_table_name.partition(".")
+        else:
+            project_id = self._get_project_id()
 
         ds, _, table_name = full_table_name.partition(".")
 

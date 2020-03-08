@@ -166,7 +166,7 @@ class BigQuery(BaseQueryRunner):
         return self.configuration.get("location")
 
     def _get_preview_max_results(self):
-        return self.configuration["previewMaxResults"]
+        return self.configuration.get("previewMaxResults", 100)
 
     def _get_additional_projects(self):
         return self.configuration["additionalProjects"].split(",")

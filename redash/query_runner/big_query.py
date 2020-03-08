@@ -170,7 +170,7 @@ class BigQuery(BaseQueryRunner):
 
     def _get_additional_projects(self):
         if self.configuration.get("additionalProjects"):
-            return self.configuration["additionalProjects"].split(",")
+            return map(str.strip, self.configuration["additionalProjects"].split(","))
         else:
             return []
 

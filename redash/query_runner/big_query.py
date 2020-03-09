@@ -166,10 +166,13 @@ class BigQuery(BaseQueryRunner):
         return self.configuration.get("location")
 
     def _get_preview_max_results(self):
-        return self.configuration["previewMaxResults"]
+        return self.configuration.get("previewMaxResults", 100)
 
     def _get_additional_projects(self):
-        return self.configuration["additionalProjects"].split(",")
+        if self.configuration.get("additionalProjects"):
+            return map(str.strip, self.configuration["additionalProjects"].split(","))
+        else:
+            return []
 
     def _get_total_bytes_processed(self, jobs, query):
         job_data = {

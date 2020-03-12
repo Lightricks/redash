@@ -29,7 +29,7 @@ function SchemaBrowserCtrl($rootScope, $scope) {
     $event.stopPropagation();
   };
 
-  this.preview = ($event, tableName) => {
+  this.preview_table = ($event, tableName) => {
     $event.preventDefault();
     $event.stopPropagation();
 

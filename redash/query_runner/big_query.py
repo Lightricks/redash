@@ -13,6 +13,10 @@ from redash.query_runner import *
 from redash.utils import json_dumps, json_loads
 from googleapiclient.errors import HttpError
 
+# Don't return more than this number of rows,
+# the client will not be able to handle it
+MAX_RETURNED_ROWS = 10000
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -228,7 +232,7 @@ class BigQuery(BaseQueryRunner):
 
         rows = []
 
-        while ("rows" in query_reply) and current_row < query_reply['totalRows']:
+        while ("rows" in query_reply) and current_row < query_reply['totalRows'] and len(rows) < MAX_RETURNED_ROWS:
             for row in query_reply["rows"]:
                 rows.append(transform_row(row, query_reply["schema"]["fields"]))
 

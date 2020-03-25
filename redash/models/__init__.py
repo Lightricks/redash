@@ -315,6 +315,11 @@ class QueryResult(db.Model, BelongsToOrgMixin):
                            retrieved_at=retrieved_at,
                            data=data)
         db.session.add(query_result)
+        db.session.commit()  # Make sure the query result is committed and assigned an ID.
+
+        if query_result.id is None:
+            raise Exception("inserted query result id is null for query_hash:" + query_hash)
+
         logging.info("Inserted query (%s) data; id=%s", query_hash, query_result.id)
         # TODO: Investigate how big an impact this select-before-update makes.
         queries = Query.query.filter(

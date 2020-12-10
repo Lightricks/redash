@@ -260,6 +260,19 @@ class QueryEditor extends React.Component {
 
     const isExecuteDisabled = this.props.queryExecuting || !this.props.canExecuteQuery;
 
+    function executeCheck() {
+      if (this.props.dataSource.dry_run && !this.props.dryRunLoading &&
+        this.props.dryRunResult != null && this.props.dryRunResult.size > 1e12) {
+        if (!confirm('You are about to submit a query that will process over 1TB of data, this ' +
+          'may take a while (and cost a lot of money), please contact your Devision BI person ' +
+          'before you continue.')) {
+          return;
+        }
+      }
+
+      this.props.executeQuery();
+    }
+
     return (
       <section style={{ height: '100%' }} data-test="QueryEditor">
         <div className="container p-15 m-b-10" style={{ height: '100%' }}>
@@ -377,7 +390,7 @@ class QueryEditor extends React.Component {
                   type="button"
                   className={'btn btn-primary m-l-5' + (isExecuteDisabled ? ' disabled' : '')}
                   disabled={isExecuteDisabled}
-                  onClick={this.props.executeQuery}
+                  onClick={executeCheck.bind(this)}
                   data-test="ExecuteButton"
                 >
                   <span className="zmdi zmdi-play" />

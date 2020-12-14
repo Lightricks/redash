@@ -92,8 +92,6 @@ class QueryEditor extends React.Component {
     dryRunResult: null,
   };
 
-  static updateQueryTimeout = null;
-
   constructor(props) {
     super(props);
 
@@ -255,16 +253,21 @@ class QueryEditor extends React.Component {
     editor.resize();
   };
 
+  static updateQueryTimeout = null;
+
   render() {
     const modKey = KeyboardShortcuts.modKey;
 
     const isExecuteDisabled = this.props.queryExecuting || !this.props.canExecuteQuery;
 
     function executeCheck() {
+      // Just confirm the user knows he's about to do something expensive, don't stop him
+      // also only do the check if(and only if) the dry run process is complete, and
+      // the information about the cost of this query is available.
       if (this.props.dataSource.dry_run && !this.props.dryRunLoading &&
         this.props.dryRunResult != null && this.props.dryRunResult.size > 1e12) {
         if (!confirm('You are about to submit a query that will process over 1TB of data, this ' +
-          'may take a while (and cost a lot of money), please contact your Devision BI person ' +
+          'may take a while (and cost a lot of money), please contact your Division BI person ' +
           'before you continue.')) {
           return;
         }

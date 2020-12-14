@@ -290,7 +290,6 @@ class BigQuery(BaseQueryRunner):
         return columns
 
     def _list_datasets(self):
-        service = self._get_bigquery_service()
         primary_project_id = self._get_project_id()
 
         projects = set(self._get_additional_projects())
@@ -305,6 +304,7 @@ class BigQuery(BaseQueryRunner):
             for project_id in projects
         ])
 
+        # Get results(might have to retry until job is complete)
         rows = self._get_results(query)
 
         # Format results as
@@ -317,6 +317,17 @@ class BigQuery(BaseQueryRunner):
         return data
 
     def _get_results(self, query):
+        """
+        Run a query and get it's results in a synchronous fashion for admin operations
+
+        Required because some admin operations return way too much data, so bigquery won't reply
+        to them immediately, instead replaying that it's still working on the results, and you should
+        ask it again in a few seconds.
+
+        :param query: The query to submit and await results
+        :return: An array with the "rows" results for the query
+        """
+
         service = self._get_bigquery_service()
         primary_project_id = self._get_project_id()
 
@@ -334,7 +345,7 @@ class BigQuery(BaseQueryRunner):
             state = "RUNNING"
             while state == "RUNNING":
                 logging.info("Wait for job %s to complete", job_id)
-                time.sleep(10)
+                time.sleep(5)
                 resp = service.jobs().get(projectId=primary_project_id, jobId=job_id).execute()
 
                 state = resp["status"]["state"]
@@ -367,9 +378,6 @@ class BigQuery(BaseQueryRunner):
         return rows
 
     def _get_table_columns(self, dataset_ids):
-        service = self._get_bigquery_service()
-        primary_project_id = self._get_project_id()
-
         query_parts = []
 
         # Construct a long chain of SELECTs joined by UNION ALLs to retrieve all the tables and
@@ -386,6 +394,8 @@ class BigQuery(BaseQueryRunner):
                 })
 
         query = "\nUNION ALL\n".join(query_parts)
+
+        # Get results(might have to retry until job is complete)
         rows = self._get_results(query)
 
         # format the result rows as

@@ -290,7 +290,6 @@ class BigQuery(BaseQueryRunner):
         return columns
 
     def _list_datasets(self):
-        service = self._get_bigquery_service()
         primary_project_id = self._get_project_id()
 
         projects = set(self._get_additional_projects())
@@ -305,23 +304,80 @@ class BigQuery(BaseQueryRunner):
             for project_id in projects
         ])
 
-        # Submit the query to BigQuery.
+        # Get results(might have to retry until job is complete)
+        rows = self._get_results(query)
+
+        # Format results as
+        # [(project_id, dataset_id)]
+        data = map(
+            lambda row: (row['f'][0]['v'], row['f'][1]['v']),
+            rows
+        )
+
+        return data
+
+    def _get_results(self, query):
+        """
+        Run a query and get it's results in a synchronous fashion for admin operations
+
+        Required because some admin operations return way too much data, so bigquery won't reply
+        to them immediately, instead replaying that it's still working on the results, and you should
+        ask it again in a few seconds.
+
+        :param query: The query to submit and await results
+        :return: An array with the "rows" results for the query
+        """
+
+        service = self._get_bigquery_service()
+        primary_project_id = self._get_project_id()
+
+        # Run the query on BigQuery.
         resp = service.jobs().query(projectId=primary_project_id, body={
             'useLegacySql':False,
             'query': query
         }).execute()
 
-        # Format results as
-        # [(project_id, dataset_id)]
-        return map(
-            lambda row: (row['f'][0]['v'], row['f'][1]['v']),
-            resp.get("rows", [])
-        )
+        # Handle a complex scenario where the tables column don't return immediately
+        if "jobComplete" in resp and not resp["jobComplete"]:
+            job_id = resp["jobReference"]["jobId"]
+
+            # First wait for the results to be calculated by BQ
+            state = "RUNNING"
+            while state == "RUNNING":
+                logging.info("Wait for job %s to complete", job_id)
+                time.sleep(5)
+                resp = service.jobs().get(projectId=primary_project_id, jobId=job_id).execute()
+
+                state = resp["status"]["state"]
+
+            if state != "DONE":
+                raise Exception("state other than DONE encountered when waiting for results %s" % (
+                    state,
+                ))
+
+            # Than iterate through them and store them in "rows"
+            page_token = ""
+            rows = []
+
+            while True:
+
+                resp = service.jobs().getQueryResults(
+                    projectId=primary_project_id,
+                    jobId=job_id,
+                    pageToken=page_token
+                ).execute()
+
+                rows += resp.get("rows", [])
+
+                page_token = resp.get("pageToken")
+                if not page_token:
+                    break
+        else:
+            rows = resp.get("rows", [])
+
+        return rows
 
     def _get_table_columns(self, dataset_ids):
-        service = self._get_bigquery_service()
-        primary_project_id = self._get_project_id()
-
         query_parts = []
 
         # Construct a long chain of SELECTs joined by UNION ALLs to retrieve all the tables and
@@ -339,11 +395,8 @@ class BigQuery(BaseQueryRunner):
 
         query = "\nUNION ALL\n".join(query_parts)
 
-        # Run the query on BigQuery.
-        resp = service.jobs().query(projectId=primary_project_id, body={
-            'useLegacySql':False,
-            'query': query
-        }).execute()
+        # Get results(might have to retry until job is complete)
+        rows = self._get_results(query)
 
         # format the result rows as
         # [(project_id,dataset_id,table_name, table_type, table_columns)]
@@ -355,7 +408,7 @@ class BigQuery(BaseQueryRunner):
                 row['f'][3]['v'],
                 row['f'][4]['v'].split(",")
             ),
-            resp.get("rows", [])
+            rows
         )
 
 
@@ -369,8 +422,10 @@ class BigQuery(BaseQueryRunner):
         start = time.time()
 
         dataset_ids = self._list_datasets()
+        logging.info("total: %d datasets", len(dataset_ids))
 
         table_columns = self._get_table_columns(dataset_ids)
+        logging.info("total: %d columns", len(table_columns))
 
         schema = []
 

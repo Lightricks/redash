@@ -17,7 +17,12 @@
           <span ng-if="table.size !== undefined"> ({{table.size}})</span>
         </strong>
         <i class="fa fa-angle-double-right copy-to-editor" aria-hidden="true"
-          ng-click="$ctrl.itemSelected($event, [table.name])"></i>
+          ng-click="$ctrl.itemSelected(
+            $event,
+            table.name.includes('.') ?
+            table.name.split('.') :
+            [table.name]
+            )"></i>
         <i
                 class="fa fa-search table-preview"
                 ng-if="$ctrl.preview && table.preview"

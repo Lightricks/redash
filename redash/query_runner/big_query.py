@@ -135,6 +135,11 @@ class BigQuery(BaseQueryRunner):
                     "title": "Preview Max Results",
                     "default": 100
                 },
+                "maxResults": {
+                    "type": "number",
+                    "title": "Max results retrieved",
+                    "default": 10000
+                },
                 'maximumBillingTier': {
                     "type": "number",
                     "title": "Maximum Billing Tier"
@@ -167,6 +172,9 @@ class BigQuery(BaseQueryRunner):
 
     def _get_preview_max_results(self):
         return self.configuration.get("previewMaxResults", 100)
+
+    def _get_max_results(self):
+        return self.configuration.get("maxResults", 10000)
 
     def _get_additional_projects(self):
         if self.configuration.get("additionalProjects"):
@@ -228,7 +236,11 @@ class BigQuery(BaseQueryRunner):
 
         rows = []
 
-        while ("rows" in query_reply) and current_row < query_reply['totalRows']:
+        max_returned_results = self._get_max_results()
+
+        while ("rows" in query_reply) and \
+                current_row < query_reply['totalRows'] and \
+                len(rows) < max_returned_results:
             for row in query_reply["rows"]:
                 rows.append(transform_row(row, query_reply["schema"]["fields"]))
 
